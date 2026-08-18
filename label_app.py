@@ -13,14 +13,20 @@ restart, so the app can be stopped and resumed freely.
 
 Usage:
     python3 label_app.py <image_folder> --labeler yourname \
+        [--clusters 4 | --clusters cluster_4,cluster_6] \
         [--manifest manifest_yourname.txt] [--urls urls.json] \
         [--labels PATH] [--port 8799] [--host 127.0.0.1]
 
 With --manifest, only the listed files (relative paths, one per line) are
 shown — this is how per-person cluster assignments are enforced.
+With --clusters, only the named cluster subfolder(s) are shown (bare
+numbers are accepted); combine with --manifest to label your assignment
+one cluster at a time. Restart with a different value to switch cluster —
+progress in the labels file is never lost.
 """
 
 import argparse
+import collections
 import datetime
 import html
 import json
@@ -155,7 +161,7 @@ Labels file: <code>{labels}</code></p></div>
 
 
 class State:
-    def __init__(self, folder, labels_path, labeler, urls_json=None, manifest=None):
+    def __init__(self, folder, labels_path, labeler, urls_json=None, manifest=None, clusters=None):
         self.folder = os.path.abspath(folder)
         self.labels_path = labels_path
         self.labeler = labeler
@@ -174,6 +180,18 @@ class State:
             self.files = [f for f in assigned if f in set(on_disk)]
         else:
             self.files = on_disk
+
+        if clusters:
+            available = {f.split(os.sep)[0] for f in self.files}
+            # accept "4" or "cluster_4"
+            want = {c if c in available else f"cluster_{c}" for c in clusters}
+            unknown = want - available
+            if unknown:
+                raise SystemExit(
+                    f"unknown cluster(s): {', '.join(sorted(unknown))}; "
+                    f"available: {', '.join(sorted(available))}"
+                )
+            self.files = [f for f in self.files if f.split(os.sep)[0] in want]
         self.file_set = set(self.files)
 
         self.urls = {}
@@ -282,6 +300,8 @@ def main():
     ap.add_argument("folder", help="image folder (searched recursively)")
     ap.add_argument("--labeler", required=True, help="your name; recorded with every label")
     ap.add_argument("--manifest", default=None, help="only label files listed here (one relative path per line)")
+    ap.add_argument("--clusters", default=None,
+                    help="comma-separated cluster(s) to label, e.g. '4' or 'cluster_4,cluster_6'")
     ap.add_argument("--urls", default=None, help="urls.json mapping uuid -> high-res source URL")
     ap.add_argument("--labels", default=None, help="labels file (default: labels_<labeler>.tsv next to this script)")
     ap.add_argument("--port", type=int, default=8799)
@@ -293,8 +313,13 @@ def main():
     urls = args.urls if args.urls else (
         os.path.join(here, "urls.json") if os.path.exists(os.path.join(here, "urls.json")) else None
     )
-    STATE = State(args.folder, labels, args.labeler, urls, args.manifest)
+    clusters = [c.strip() for c in args.clusters.split(",")] if args.clusters else None
+    STATE = State(args.folder, labels, args.labeler, urls, args.manifest, clusters)
     print(f"{len(STATE.files)} images assigned in {STATE.folder}")
+    per_cluster = collections.Counter(f.split(os.sep)[0] for f in STATE.files)
+    done_per = collections.Counter(f.split(os.sep)[0] for f in STATE.labeled & STATE.file_set)
+    for c in sorted(per_cluster, key=lambda x: (len(x), x)):
+        print(f"  {c}: {done_per[c]}/{per_cluster[c]} labeled")
     if STATE.urls:
         print(f"{len(STATE.urls)} high-res URLs loaded")
     print(f"{len(STATE.labeled & STATE.file_set)} already labeled; labels append to {labels}")

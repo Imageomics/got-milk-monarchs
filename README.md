@@ -15,6 +15,10 @@ Everything here is plain Python standard library (3.9+) — no installs needed.
    python3 label_app.py images/ --labeler <you> --manifest manifest_<you>.txt
    ```
 
+   To work cluster-by-cluster (good coverage even if we don't finish),
+   add `--clusters 4` (or `--clusters cluster_4,cluster_6`) and restart
+   with a different number when you finish one — progress is kept.
+
 3. Open http://localhost:8799 and answer **Does this image contain leaf
    damages?** — click or press <kbd>y</kbd> / <kbd>n</kbd> / <kbd>u</kbd>
    (Yes / No / Uninformative).
