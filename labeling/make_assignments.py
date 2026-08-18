@@ -38,7 +38,7 @@ def main():
         full = os.path.join(folder, d)
         if os.path.isdir(full):
             files = sorted(
-                os.path.join(d, f) for f in os.listdir(full)
+                f"{d}/{f}" for f in os.listdir(full)  # always forward slashes, portable
                 if os.path.splitext(f)[1].lower() in EXTS
             )
             if files:

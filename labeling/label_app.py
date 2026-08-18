@@ -279,8 +279,10 @@ class State:
         self.labels_path = labels_path
         self.labeler = labeler
         if self.folder:
+            # relative paths always use forward slashes, on every OS, so
+            # filelists, manifests, and label files are portable
             on_disk = sorted(
-                os.path.relpath(os.path.join(dp, f), self.folder)
+                os.path.relpath(os.path.join(dp, f), self.folder).replace(os.sep, "/")
                 for dp, _, fs in os.walk(self.folder)
                 for f in fs
                 if os.path.splitext(f)[1].lower() in EXTS
@@ -300,7 +302,7 @@ class State:
             self.files = on_disk
 
         if clusters:
-            available = {f.split(os.sep)[0] for f in self.files}
+            available = {f.split("/")[0] for f in self.files}
             # accept "4" or "cluster_4"
             want = {c if c in available else f"cluster_{c}" for c in clusters}
             unknown = want - available
@@ -309,7 +311,7 @@ class State:
                     f"unknown cluster(s): {', '.join(sorted(unknown))}; "
                     f"available: {', '.join(sorted(available))}"
                 )
-            self.files = [f for f in self.files if f.split(os.sep)[0] in want]
+            self.files = [f for f in self.files if f.split("/")[0] in want]
         self.file_set = set(self.files)
 
         self.urls = {}
@@ -485,8 +487,8 @@ def main():
     STATE = State(args.folder, labels, args.labeler, urls, args.manifest, clusters, filelist)
     src = STATE.folder or f"web-only ({filelist})"
     print(f"{len(STATE.files)} images assigned from {src}")
-    per_cluster = collections.Counter(f.split(os.sep)[0] for f in STATE.files)
-    done_per = collections.Counter(f.split(os.sep)[0] for f in STATE.files if f in STATE.labels)
+    per_cluster = collections.Counter(f.split("/")[0] for f in STATE.files)
+    done_per = collections.Counter(f.split("/")[0] for f in STATE.files if f in STATE.labels)
     for c in sorted(per_cluster, key=lambda x: (len(x), x)):
         print(f"  {c}: {done_per[c]}/{per_cluster[c]} labeled")
     if STATE.urls:
