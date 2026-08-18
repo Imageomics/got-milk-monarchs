@@ -7,12 +7,15 @@ Uninformative** for leaf damage. One image at a time, in your browser.
 
 - Python 3.9+ (standard library only — nothing to install)
 - The shared `images/` folder (`cluster_*/uuid.png`), distributed separately
-- This repo: `label_app.py`, `urls.json`, and (if assigned) your `manifest_<you>.txt`
+- This folder: `label_app.py`, `urls.json`, and (if assigned) your `manifest_<you>.txt`
 
 ## Start
 
+All commands run from this `labeling/` folder:
+
 ```bash
-python3 label_app.py images/ --labeler <you>
+cd labeling
+python3 label_app.py path/to/images/ --labeler <you>
 ```
 
 then open **http://localhost:8799**.
@@ -45,7 +48,7 @@ what's done. When finished, send this file back.
 ## Coordinator
 
 ```bash
-python3 make_assignments.py images/ --names alice,bob,carol --overlap 75
+python3 make_assignments.py path/to/images/ --names alice,bob,carol --overlap 75
 python3 merge_labels.py labels_*.tsv --assignments assignments.json
 ```
 
