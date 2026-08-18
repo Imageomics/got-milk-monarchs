@@ -71,7 +71,7 @@ PAGE = """<!doctype html>
 <header>{labeler} &middot; {progress} labeled &middot; {remaining} remaining &middot; <code>{fname}</code>
   &middot; <span id="srcbadge" style="color:#7a7">loading&hellip;</span></header>
 <div class="img-box"><img id="im" alt="specimen image" draggable="false"
-  data-hi="{hi_url}" data-local="/img/{fname_url}"></div>
+  data-hi="{hi_url}" data-local="{local_src}"></div>
 <div class="zoom-hint">scroll to zoom &middot; drag to pan &middot; double-click or <kbd>0</kbd> to reset</div>
 <div class="nav">
   <a id="prev" href="/?i={prev_i}">&larr; <kbd>&#8592;</kbd></a>
@@ -108,11 +108,16 @@ im.onerror = () => {{
   tries++;
   if (HI && tries < 3) {{
     im.src = HI + (HI.includes('?') ? '&' : '?') + 'retry=' + tries;
-  }} else {{
+  }} else if (LOCAL) {{
     im.onerror = null;
     im.src = LOCAL;
     badge.textContent = 'local' + (HI ? ' (high-res failed)' : '');
     badge.style.color = '#ca8';
+  }} else {{
+    im.onerror = null;
+    im.style.opacity = 0.15;
+    badge.textContent = 'image failed to load — label Uninformative or navigate on';
+    badge.style.color = '#e57373';
   }}
 }};
 im.onload = () => {{
@@ -183,16 +188,21 @@ Labels file: <code>{labels}</code></p>
 
 
 class State:
-    def __init__(self, folder, labels_path, labeler, urls_json=None, manifest=None, clusters=None):
-        self.folder = os.path.abspath(folder)
+    def __init__(self, folder, labels_path, labeler, urls_json=None, manifest=None,
+                 clusters=None, filelist=None):
+        self.folder = os.path.abspath(folder) if folder else None
         self.labels_path = labels_path
         self.labeler = labeler
-        on_disk = sorted(
-            os.path.relpath(os.path.join(dp, f), self.folder)
-            for dp, _, fs in os.walk(self.folder)
-            for f in fs
-            if os.path.splitext(f)[1].lower() in EXTS
-        )
+        if self.folder:
+            on_disk = sorted(
+                os.path.relpath(os.path.join(dp, f), self.folder)
+                for dp, _, fs in os.walk(self.folder)
+                for f in fs
+                if os.path.splitext(f)[1].lower() in EXTS
+            )
+        else:  # web-only: image list comes from the filelist, images from URLs
+            with open(filelist) as fh:
+                on_disk = sorted(line.strip() for line in fh if line.strip())
         if manifest:
             with open(manifest) as fh:
                 assigned = [line.strip() for line in fh if line.strip()]
@@ -297,6 +307,7 @@ class Handler(BaseHTTPRequestHandler):
                 fname_url=urllib.parse.quote(fname),
                 fname_attr=html.escape(fname, quote=True),
                 hi_url=html.escape(STATE.urls.get(uuid, ""), quote=True),
+                local_src=f"/img/{urllib.parse.quote(fname)}" if STATE.folder else "",
                 i=i, pos=i + 1, total=n,
                 prev_i=max(0, i - 1), next_i=min(n - 1, i + 1),
                 border_color=colors.get(cur, "transparent"),
@@ -304,6 +315,9 @@ class Handler(BaseHTTPRequestHandler):
                 cur_label=html.escape(cur) if cur else "unlabeled",
             ))
         elif path.startswith("/img/"):
+            if STATE.folder is None:
+                self._html("web-only mode: no local images", 404)
+                return
             rel = path[len("/img/"):]
             full = os.path.normpath(os.path.join(STATE.folder, rel))
             if not full.startswith(STATE.folder) or not os.path.isfile(full):
@@ -350,8 +364,13 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     global STATE
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("folder", help="image folder (searched recursively)")
+    ap.add_argument("folder", nargs="?", default=None,
+                    help="image folder (searched recursively); omit for web-only mode, "
+                         "which lists images from --filelist and fetches them from their URLs")
     ap.add_argument("--labeler", required=True, help="your name; recorded with every label")
+    ap.add_argument("--filelist", default=None,
+                    help="web-only mode: file with one relative image path per line "
+                         "(default: filelist.txt next to this script)")
     ap.add_argument("--manifest", default=None, help="only label files listed here (one relative path per line)")
     ap.add_argument("--clusters", default=None,
                     help="comma-separated cluster(s) to label, e.g. '4' or 'cluster_4,cluster_6'")
@@ -366,9 +385,17 @@ def main():
     urls = args.urls if args.urls else (
         os.path.join(here, "urls.json") if os.path.exists(os.path.join(here, "urls.json")) else None
     )
+    filelist = args.filelist or os.path.join(here, "filelist.txt")
+    if not args.folder and not os.path.exists(filelist):
+        raise SystemExit(f"web-only mode needs a filelist ({filelist} not found); "
+                         "pass an image folder or --filelist")
+    if not args.folder and not urls:
+        raise SystemExit("web-only mode needs urls.json (no local fallback without it)")
+
     clusters = [c.strip() for c in args.clusters.split(",")] if args.clusters else None
-    STATE = State(args.folder, labels, args.labeler, urls, args.manifest, clusters)
-    print(f"{len(STATE.files)} images assigned in {STATE.folder}")
+    STATE = State(args.folder, labels, args.labeler, urls, args.manifest, clusters, filelist)
+    src = STATE.folder or f"web-only ({filelist})"
+    print(f"{len(STATE.files)} images assigned from {src}")
     per_cluster = collections.Counter(f.split(os.sep)[0] for f in STATE.files)
     done_per = collections.Counter(f.split(os.sep)[0] for f in STATE.files if f in STATE.labels)
     for c in sorted(per_cluster, key=lambda x: (len(x), x)):

@@ -6,16 +6,26 @@ Uninformative** for leaf damage. One image at a time, in your browser.
 ## What you need
 
 - Python 3.9+ (standard library only — nothing to install)
-- The shared `images/` folder (`cluster_*/uuid.png`), distributed separately
-- This folder: `label_app.py`, `urls.json`, and (if assigned) your `manifest_<you>.txt`
+- This folder: `label_app.py`, `urls.json`, `filelist.txt`, and (if assigned)
+  your `manifest_<you>.txt`
+- Optional: the shared `images/` folder (`cluster_*/uuid.png`) — only needed
+  for offline work; otherwise images stream from iNaturalist
 
 ## Start
 
-All commands run from this `labeling/` folder:
+All commands run from this `labeling/` folder. Easiest — **web-only mode**,
+no images to download (needs internet):
 
 ```bash
 cd labeling
-python3 label_app.py path/to/images/ --labeler <you>
+python3 label_app.py --labeler <you> --clusters 4
+```
+
+Or with the local `images/` folder (works offline, and is the fallback when
+an iNat fetch fails):
+
+```bash
+python3 label_app.py path/to/images/ --labeler <you> --clusters 4
 ```
 
 then open **http://localhost:8799**.
@@ -36,8 +46,12 @@ finish one — progress is never lost.
 
 - Click **Yes / No / Uninformative**, or press <kbd>y</kbd> / <kbd>n</kbd> / <kbd>u</kbd>
 - Scroll to zoom, drag to pan, double-click or <kbd>0</kbd> to reset
+- ← / → (buttons or arrow keys) to go back and fix a mistake — answering
+  again overwrites; labeled images are framed green (Yes), red (No),
+  gray (Uninformative)
 - The header badge shows whether you see the iNat original (high-res,
-  3 attempts) or the local 720px fallback
+  3 attempts) or the local 720px fallback; in web-only mode a failed fetch
+  says so instead
 
 ## Output
 
