@@ -1,39 +1,31 @@
-"""Leaf-damage labeling app (stdlib only — runs on any Python 3.8+).
+"""Leaf-damage labeling app (stdlib only — runs on any Python 3.9+).
 
-Serves images from a folder (recursive) one at a time in the browser with
-Yes / No / Uninformative buttons (keyboard: y / n / u), scroll-wheel zoom,
-drag-to-pan. If a uuid -> URL map is provided, the browser tries the
-high-resolution iNaturalist original first (3 attempts) and falls back to
-the on-disk image.
+Single-page app: images swap in place with no page reloads, and the next
+12 images are prefetched in the background so advancing is instant.
+Yes / No / Uninformative buttons (keyboard: y / n / u), back/forward
+navigation (arrow keys) to review and fix — answering again overwrites
+(the labels file stays append-only; the newest line per image wins).
+Labeled images are framed green (Yes), red (No), or gray (Uninformative).
+
+Images come from the high-resolution iNaturalist originals (3 attempts)
+with the local file as fallback. In web-only mode (no folder argument,
+list from filelist.txt) there is no local fallback and a failed fetch is
+reported on screen.
 
 Each answer appends one tab-separated line
     <relative filename>\t<label>\t<labeler>\t<ISO timestamp>
-to the labels file and advances. Already-labeled images are skipped on
-restart, so the app can be stopped and resumed freely.
-
-Navigate back/forward with the arrow buttons (or arrow keys) to review and
-fix mistakes: answering again overwrites the previous label (the file stays
-append-only; the newest line per image wins). Labeled images are framed
-green (Yes), red (No), or gray (Uninformative).
+to the labels file. Already-labeled images are skipped on restart.
 
 Usage:
-    python3 label_app.py <image_folder> --labeler yourname \
+    python3 label_app.py [image_folder] --labeler yourname \
         [--clusters 4 | --clusters cluster_4,cluster_6] \
-        [--manifest manifest_yourname.txt] [--urls urls.json] \
-        [--labels PATH] [--port 8799] [--host 127.0.0.1]
-
-With --manifest, only the listed files (relative paths, one per line) are
-shown — this is how per-person cluster assignments are enforced.
-With --clusters, only the named cluster subfolder(s) are shown (bare
-numbers are accepted); combine with --manifest to label your assignment
-one cluster at a time. Restart with a different value to switch cluster —
-progress in the labels file is never lost.
+        [--manifest manifest_yourname.txt] [--filelist filelist.txt] \
+        [--urls urls.json] [--labels PATH] [--port 8799] [--host 127.0.0.1]
 """
 
 import argparse
 import collections
 import datetime
-import html
 import json
 import mimetypes
 import os
@@ -43,105 +35,199 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 EXTS = {".png", ".webp", ".jpg", ".jpeg"}
 LABELS = {"Yes", "No", "Uninformative"}
 
-PAGE = """<!doctype html>
+SHELL = """<!doctype html>
 <title>Leaf damage labeling</title>
 <style>
-  body {{ font-family: system-ui, sans-serif; margin: 0; background: #111; color: #eee;
-         display: flex; flex-direction: column; align-items: center; min-height: 100vh; }}
-  header {{ padding: 10px; font-size: 14px; color: #aaa; }}
-  .img-box {{ flex: 1; display: flex; align-items: center; justify-content: center;
-              overflow: hidden; width: 92vw; height: 70vh; }}
-  img {{ max-width: 92vw; max-height: 70vh; border-radius: 6px;
-         transform-origin: 0 0; cursor: zoom-in; user-select: none;
-         border: 5px solid {border_color}; box-sizing: border-box; }}
-  .zoom-hint {{ font-size: 12px; color: #888; margin-top: 4px; }}
-  .nav {{ display: flex; gap: 12px; align-items: center; margin-top: 8px; font-size: 15px; }}
-  .nav a {{ color: #ddd; background: #2a2a2a; text-decoration: none;
-            padding: 6px 14px; border-radius: 6px; }}
-  .nav .pos {{ color: #888; }}
-  .curlabel {{ font-weight: 600; }}
-  .q {{ font-size: 20px; margin: 12px; }}
-  .buttons {{ display: flex; gap: 14px; margin-bottom: 24px; }}
-  button {{ font-size: 18px; padding: 12px 28px; border-radius: 8px; border: none; cursor: pointer; }}
-  .yes {{ background: #2e7d32; color: white; }}
-  .no  {{ background: #c62828; color: white; }}
-  .uninf {{ background: #616161; color: white; }}
-  kbd {{ background: #333; border-radius: 4px; padding: 1px 6px; font-size: 13px; }}
+  body { font-family: system-ui, sans-serif; margin: 0; background: #111; color: #eee;
+         display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
+  header { padding: 10px; font-size: 14px; color: #aaa; }
+  .img-box { flex: 1; display: flex; align-items: center; justify-content: center;
+             overflow: hidden; width: 92vw; height: 70vh; }
+  img { max-width: 92vw; max-height: 70vh; border-radius: 6px;
+        transform-origin: 0 0; cursor: zoom-in; user-select: none;
+        border: 5px solid transparent; box-sizing: border-box; }
+  .zoom-hint { font-size: 12px; color: #888; margin-top: 4px; }
+  .nav { display: flex; gap: 12px; align-items: center; margin-top: 8px; font-size: 15px; }
+  .nav button { font-size: 15px; padding: 6px 14px; border-radius: 6px; border: none;
+                background: #2a2a2a; color: #ddd; cursor: pointer; }
+  .nav .pos { color: #888; }
+  .curlabel { font-weight: 600; }
+  .q { font-size: 20px; margin: 12px; }
+  .buttons { display: flex; gap: 14px; margin-bottom: 24px; }
+  .buttons button { font-size: 18px; padding: 12px 28px; border-radius: 8px;
+                    border: none; cursor: pointer; }
+  .yes { background: #2e7d32; color: white; }
+  .no  { background: #c62828; color: white; }
+  .uninf { background: #616161; color: white; }
+  kbd { background: #333; border-radius: 4px; padding: 1px 6px; font-size: 13px; }
+  #donebox { display: none; text-align: center; margin: 40px; }
 </style>
-<header>{labeler} &middot; {progress} labeled &middot; {remaining} remaining &middot; <code>{fname}</code>
+<header><span id="labeler"></span> &middot; <span id="done"></span> labeled &middot;
+  <span id="remaining"></span> remaining &middot; <code id="fname"></code>
   &middot; <span id="srcbadge" style="color:#7a7">loading&hellip;</span></header>
-<div class="img-box"><img id="im" alt="specimen image" draggable="false"
-  data-hi="{hi_url}" data-local="{local_src}"></div>
+<div id="main">
+<div class="img-box"><img id="im" alt="specimen image" draggable="false"></div>
 <div class="zoom-hint">scroll to zoom &middot; drag to pan &middot; double-click or <kbd>0</kbd> to reset</div>
 <div class="nav">
-  <a id="prev" href="/?i={prev_i}">&larr; <kbd>&#8592;</kbd></a>
-  <span class="pos">{pos} / {total}</span>
-  <a id="next" href="/?i={next_i}">&rarr; <kbd>&#8594;</kbd></a>
-  <a href="/">&#9193; next unlabeled</a>
-  <span class="curlabel" style="color:{label_color}">{cur_label}</span>
+  <button id="prev">&larr; <kbd>&#8592;</kbd></button>
+  <span class="pos"><span id="pos"></span> / <span id="total"></span></span>
+  <button id="next">&rarr; <kbd>&#8594;</kbd></button>
+  <button id="skip">&#9193; next unlabeled</button>
+  <span class="curlabel" id="curlabel"></span>
 </div>
 <div class="q">Does this image contain leaf damages?</div>
-<form method="POST" action="/label" class="buttons">
-  <input type="hidden" name="fname" value="{fname_attr}">
-  <input type="hidden" name="i" value="{i}">
-  <button class="yes" name="label" value="Yes">Yes <kbd>y</kbd></button>
-  <button class="no" name="label" value="No">No <kbd>n</kbd></button>
-  <button class="uninf" name="label" value="Uninformative">Uninformative <kbd>u</kbd></button>
-</form>
+<div class="buttons">
+  <button class="yes" onclick="label('Yes')">Yes <kbd>y</kbd></button>
+  <button class="no" onclick="label('No')">No <kbd>n</kbd></button>
+  <button class="uninf" onclick="label('Uninformative')">Uninformative <kbd>u</kbd></button>
+</div>
+</div>
+<div id="donebox"><h1>All done &#127881;</h1>
+  <p><span id="donecount"></span> images labeled.</p>
+  <p><button class="nav" onclick="review()">review from the start &rarr;</button></p>
+</div>
 <script>
-document.addEventListener('keydown', e => {{
-  if (e.key === '0') {{ reset(); return; }}
-  if (e.key === 'ArrowLeft') {{ document.getElementById('prev').click(); return; }}
-  if (e.key === 'ArrowRight') {{ document.getElementById('next').click(); return; }}
-  const map = {{y: 'Yes', n: 'No', u: 'Uninformative'}};
-  const v = map[e.key.toLowerCase()];
-  if (!v) return;
-  document.querySelector(`button[value=${{v}}]`).click();
-}});
+const CFG = __CONFIG__;
+const PREFETCH = 12;
+const COLORS = {Yes: '#2e7d32', No: '#c62828', Uninformative: '#9e9e9e'};
 
-// --- image source: try high-res URL up to 3 times, then fall back to disk ---
 const im = document.getElementById('im');
 const badge = document.getElementById('srcbadge');
-const HI = im.dataset.hi, LOCAL = im.dataset.local;
-let tries = 0;
-im.onerror = () => {{
-  tries++;
-  if (HI && tries < 3) {{
-    im.src = HI + (HI.includes('?') ? '&' : '?') + 'retry=' + tries;
-  }} else if (LOCAL) {{
-    im.onerror = null;
-    im.src = LOCAL;
-    badge.textContent = 'local' + (HI ? ' (high-res failed)' : '');
-    badge.style.color = '#ca8';
-  }} else {{
-    im.onerror = null;
-    im.style.opacity = 0.15;
-    badge.textContent = 'image failed to load — label Uninformative or navigate on';
-    badge.style.color = '#e57373';
-  }}
-}};
-im.onload = () => {{
-  if (im.src.startsWith(location.origin)) {{
-    badge.textContent = `local ${{im.naturalWidth}}×${{im.naturalHeight}}`;
-    badge.style.color = '#ca8';
-  }} else {{
-    badge.textContent = `iNat original ${{im.naturalWidth}}×${{im.naturalHeight}}`;
-    badge.style.color = '#7a7';
-  }}
-}};
-im.src = HI || LOCAL;
+const $ = id => document.getElementById(id);
+$('labeler').textContent = CFG.labeler;
+$('total').textContent = CFG.total;
+
+let cur = CFG.start;
+const items = new Map();      // index -> metadata
+const warmed = new Map();     // index -> Image() keeping the fetch warm
+
+async function getItem(i) {
+  if (!items.has(i)) {
+    const r = await fetch('/api/item?i=' + i);
+    items.set(i, await r.json());
+  }
+  return items.get(i);
+}
+
+function warm(i) {
+  if (warmed.has(i)) return;
+  getItem(i).then(it => {
+    const pf = new Image();
+    pf.onerror = () => { if (it.local) pf.src = it.local; };
+    pf.src = it.hi || it.local;
+    warmed.set(i, pf);
+  });
+}
+
+function prefetchAround(i) {
+  for (let j = i + 1; j <= Math.min(CFG.total - 1, i + PREFETCH); j++) warm(j);
+  if (i > 0) warm(i - 1);
+  for (const k of warmed.keys())            // drop entries far outside the window
+    if (k < i - 3 || k > i + PREFETCH + 3) warmed.delete(k);
+}
+
+function paint(it) {
+  $('fname').textContent = it.fname;
+  $('pos').textContent = it.i + 1;
+  $('done').textContent = it.done;
+  $('remaining').textContent = CFG.total - it.done;
+  const c = COLORS[it.label];
+  im.style.borderColor = c || 'transparent';
+  $('curlabel').textContent = it.label || 'unlabeled';
+  $('curlabel').style.color = c || '#888';
+}
+
+async function show(i) {
+  cur = Math.max(0, Math.min(CFG.total - 1, i));
+  const it = await getItem(cur);
+  paint(it);
+  reset();                                   // zoom reset
+  let tries = 0;
+  badge.textContent = 'loading\\u2026'; badge.style.color = '#7a7';
+  im.style.opacity = 1;
+  im.onerror = () => {
+    tries++;
+    if (it.hi && tries < 3) {
+      im.src = it.hi + (it.hi.includes('?') ? '&' : '?') + 'retry=' + tries;
+    } else if (it.local && !im.src.endsWith(it.local)) {
+      im.src = it.local;
+      badge.textContent = 'local' + (it.hi ? ' (high-res failed)' : '');
+      badge.style.color = '#ca8';
+    } else {
+      im.onerror = null;
+      im.style.opacity = 0.15;
+      badge.textContent = 'image failed to load \\u2014 label Uninformative or navigate on';
+      badge.style.color = '#e57373';
+    }
+  };
+  im.onload = () => {
+    if (im.src.startsWith(location.origin)) {
+      badge.textContent = `local ${im.naturalWidth}\\u00d7${im.naturalHeight}`;
+      badge.style.color = '#ca8';
+    } else {
+      badge.textContent = `iNat original ${im.naturalWidth}\\u00d7${im.naturalHeight}`;
+      badge.style.color = '#7a7';
+    }
+  };
+  im.src = it.hi || it.local;
+  prefetchAround(cur);
+}
+
+async function label(v) {
+  const it = await getItem(cur);
+  const r = await fetch('/api/label', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: new URLSearchParams({fname: it.fname, label: v, i: cur}),
+  });
+  const resp = await r.json();
+  if (!resp.ok) { alert(resp.error || 'label failed'); return; }
+  it.label = v; it.done = resp.done;
+  items.forEach(x => { x.done = resp.done; });
+  if (resp.next === null) {
+    $('main').style.display = 'none';
+    $('donebox').style.display = 'block';
+    $('donecount').textContent = resp.done;
+  } else {
+    show(resp.next);
+  }
+}
+
+async function skip() {
+  const r = await fetch('/api/next?after=' + cur);
+  const j = await r.json();
+  if (j.next !== null) show(j.next);
+}
+
+function review() {
+  $('donebox').style.display = 'none';
+  $('main').style.display = '';
+  show(0);
+}
+
+$('prev').onclick = () => show(cur - 1);
+$('next').onclick = () => show(cur + 1);
+$('skip').onclick = skip;
+
+document.addEventListener('keydown', e => {
+  if (e.key === '0') { reset(); return; }
+  if (e.key === 'ArrowLeft') { show(cur - 1); return; }
+  if (e.key === 'ArrowRight') { show(cur + 1); return; }
+  const map = {y: 'Yes', n: 'No', u: 'Uninformative'};
+  if (map[e.key.toLowerCase()]) label(map[e.key.toLowerCase()]);
+});
 
 // --- zoom & pan ---
 const box = document.querySelector('.img-box');
 let scale = 1, tx = 0, ty = 0, dragging = false, sx = 0, sy = 0;
 
-function apply() {{
-  im.style.transform = `translate(${{tx}}px, ${{ty}}px) scale(${{scale}})`;
+function apply() {
+  im.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
   im.style.cursor = scale > 1 ? (dragging ? 'grabbing' : 'grab') : 'zoom-in';
-}}
-function reset() {{ scale = 1; tx = 0; ty = 0; apply(); }}
+}
+function reset() { scale = 1; tx = 0; ty = 0; apply(); }
 
-box.addEventListener('wheel', e => {{
+box.addEventListener('wheel', e => {
   e.preventDefault();
   const rect = im.getBoundingClientRect();
   const px = (e.clientX - rect.left) / scale;
@@ -151,39 +237,38 @@ box.addEventListener('wheel', e => {{
   tx += px * (scale - ns);
   ty += py * (scale - ns);
   scale = ns;
-  if (scale === 1) {{ tx = 0; ty = 0; }}
+  if (scale === 1) { tx = 0; ty = 0; }
   apply();
-}}, {{passive: false}});
+}, {passive: false});
 
-im.addEventListener('mousedown', e => {{
+im.addEventListener('mousedown', e => {
   if (scale === 1) return;
   dragging = true; sx = e.clientX - tx; sy = e.clientY - ty;
   e.preventDefault(); apply();
-}});
-window.addEventListener('mousemove', e => {{
+});
+window.addEventListener('mousemove', e => {
   if (!dragging) return;
   tx = e.clientX - sx; ty = e.clientY - sy; apply();
-}});
-window.addEventListener('mouseup', () => {{ dragging = false; apply(); }});
-im.addEventListener('dblclick', e => {{
-  if (scale === 1) {{
+});
+window.addEventListener('mouseup', () => { dragging = false; apply(); });
+im.addEventListener('dblclick', e => {
+  if (scale === 1) {
     const rect = im.getBoundingClientRect();
     scale = 3;
     tx = (e.clientX - rect.left) * (1 - scale);
     ty = (e.clientY - rect.top) * (1 - scale);
     apply();
-  }} else reset();
-}});
-</script>
-"""
+  } else reset();
+});
 
-DONE_PAGE = """<!doctype html>
-<title>Leaf damage labeling</title>
-<body style="font-family:system-ui;background:#111;color:#eee;display:flex;
-             align-items:center;justify-content:center;height:100vh">
-<div style="text-align:center"><h1>All done &#127881;</h1><p>{n} images labeled.<br>
-Labels file: <code>{labels}</code></p>
-<p><a href="/?i=0" style="color:#7a7">review from the start &rarr;</a></p></div>
+if (CFG.all_done) {
+  $('main').style.display = 'none';
+  $('donebox').style.display = 'block';
+  $('donecount').textContent = CFG.done;
+} else {
+  show(CFG.start);
+}
+</script>
 """
 
 
@@ -203,12 +288,13 @@ class State:
         else:  # web-only: image list comes from the filelist, images from URLs
             with open(filelist) as fh:
                 on_disk = sorted(line.strip() for line in fh if line.strip())
+
         if manifest:
             with open(manifest) as fh:
                 assigned = [line.strip() for line in fh if line.strip()]
             missing = [f for f in assigned if f not in set(on_disk)]
             if missing:
-                print(f"WARNING: {len(missing)} manifest files not on disk, e.g. {missing[0]}")
+                print(f"WARNING: {len(missing)} manifest files not available, e.g. {missing[0]}")
             self.files = [f for f in assigned if f in set(on_disk)]
         else:
             self.files = on_disk
@@ -252,6 +338,18 @@ class State:
                 return i
         return None
 
+    def item(self, i):
+        fname = self.files[i]
+        uuid = os.path.splitext(os.path.basename(fname))[0]
+        return {
+            "i": i,
+            "fname": fname,
+            "hi": self.urls.get(uuid, ""),
+            "local": f"/img/{urllib.parse.quote(fname)}" if self.folder else "",
+            "label": self.labels.get(fname),
+            "done": self.done_count(),
+        }
+
     def record(self, fname, label):
         if fname not in self.file_set:
             raise ValueError(f"unknown file: {fname}")
@@ -269,96 +367,87 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
-    def _html(self, body, code=200):
-        data = body.encode()
+    def _send(self, data, ctype, code=200, cache=False):
         self.send_response(code)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
+        if cache:
+            self.send_header("Cache-Control", "max-age=86400")
         self.end_headers()
         self.wfile.write(data)
+
+    def _json(self, obj, code=200):
+        self._send(json.dumps(obj).encode(), "application/json", code)
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         path = urllib.parse.unquote(parsed.path)
+        qs = urllib.parse.parse_qs(parsed.query)
+
         if path == "/":
-            qs = urllib.parse.parse_qs(parsed.query)
-            n = len(STATE.files)
-            if "i" in qs:
-                try:
-                    i = max(0, min(n - 1, int(qs["i"][0])))
-                except ValueError:
-                    i = 0
-            else:
-                i = STATE.next_unlabeled_index()
-                if i is None:
-                    self._html(DONE_PAGE.format(n=STATE.done_count(),
-                                                labels=html.escape(STATE.labels_path)))
-                    return
-            fname = STATE.files[i]
-            uuid = os.path.splitext(os.path.basename(fname))[0]
-            cur = STATE.labels.get(fname)
-            colors = {"Yes": "#2e7d32", "No": "#c62828", "Uninformative": "#9e9e9e"}
-            done = STATE.done_count()
-            self._html(PAGE.format(
-                labeler=html.escape(STATE.labeler),
-                progress=done,
-                remaining=n - done,
-                fname=html.escape(fname),
-                fname_url=urllib.parse.quote(fname),
-                fname_attr=html.escape(fname, quote=True),
-                hi_url=html.escape(STATE.urls.get(uuid, ""), quote=True),
-                local_src=f"/img/{urllib.parse.quote(fname)}" if STATE.folder else "",
-                i=i, pos=i + 1, total=n,
-                prev_i=max(0, i - 1), next_i=min(n - 1, i + 1),
-                border_color=colors.get(cur, "transparent"),
-                label_color=colors.get(cur, "#888"),
-                cur_label=html.escape(cur) if cur else "unlabeled",
-            ))
+            start = STATE.next_unlabeled_index()
+            cfg = {
+                "labeler": STATE.labeler,
+                "total": len(STATE.files),
+                "start": start if start is not None else 0,
+                "all_done": start is None,
+                "done": STATE.done_count(),
+            }
+            page = SHELL.replace("__CONFIG__", json.dumps(cfg))
+            self._send(page.encode(), "text/html; charset=utf-8")
+        elif path == "/api/item":
+            try:
+                i = max(0, min(len(STATE.files) - 1, int(qs.get("i", ["0"])[0])))
+            except ValueError:
+                self._json({"error": "bad index"}, 400)
+                return
+            self._json(STATE.item(i))
+        elif path == "/api/next":
+            try:
+                after = int(qs.get("after", ["-1"])[0])
+            except ValueError:
+                after = -1
+            self._json({"next": STATE.next_unlabeled_index(after)})
         elif path.startswith("/img/"):
             if STATE.folder is None:
-                self._html("web-only mode: no local images", 404)
+                self._send(b"web-only mode: no local images", "text/plain", 404)
                 return
             rel = path[len("/img/"):]
             full = os.path.normpath(os.path.join(STATE.folder, rel))
             if not full.startswith(STATE.folder) or not os.path.isfile(full):
-                self._html("not found", 404)
+                self._send(b"not found", "text/plain", 404)
                 return
             ctype = mimetypes.guess_type(full)[0] or "application/octet-stream"
             with open(full, "rb") as fh:
-                data = fh.read()
-            self.send_response(200)
-            self.send_header("Content-Type", ctype)
-            self.send_header("Content-Length", str(len(data)))
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write(data)
+                self._send(fh.read(), ctype, cache=True)
         else:
-            self._html("not found", 404)
+            self._send(b"not found", "text/plain", 404)
 
     def do_POST(self):
-        if self.path != "/label":
-            self._html("not found", 404)
+        if self.path != "/api/label":
+            self._json({"ok": False, "error": "not found"}, 404)
             return
         length = int(self.headers.get("Content-Length", 0))
         form = urllib.parse.parse_qs(self.rfile.read(length).decode())
         fname = form.get("fname", [""])[0]
         label = form.get("label", [""])[0]
         if label not in LABELS:
-            self._html("bad label", 400)
+            self._json({"ok": False, "error": "bad label"}, 400)
             return
         try:
             STATE.record(fname, label)
-        except ValueError:
-            self._html("unknown file", 400)
+        except ValueError as e:
+            self._json({"ok": False, "error": str(e)}, 400)
             return
         try:
             i = int(form.get("i", ["-1"])[0])
         except ValueError:
             i = -1
-        nxt = STATE.next_unlabeled_index(after=i)
-        self.send_response(303)
-        self.send_header("Location", "/" if nxt is None else f"/?i={nxt}")
-        self.end_headers()
+        self._json({
+            "ok": True,
+            "done": STATE.done_count(),
+            "next": STATE.next_unlabeled_index(after=i),
+        })
 
 
 def main():
