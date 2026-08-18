@@ -75,7 +75,7 @@ SHELL = """<!doctype html>
   <button id="skip">&#9193; next unlabeled</button>
   <span class="curlabel" id="curlabel"></span>
 </div>
-<div class="q">Does this image contain leaf damages?</div>
+<div class="q">Does this image contain damage from monarch caterpillars?</div>
 <div class="buttons">
   <button class="yes" onclick="label('Yes')">Yes <kbd>y</kbd></button>
   <button class="no" onclick="label('No')">No <kbd>n</kbd></button>
