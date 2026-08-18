@@ -55,6 +55,6 @@ on the overlap set before writing `merged_labels.tsv`.
 | `label_app.py` | the labeling web app (stdlib only) |
 | `make_assignments.py` | cluster bin-packing + overlap set → manifests |
 | `merge_labels.py` | merge, validate, agreement report |
-| `urls.json` | uuid → iNaturalist original URL (2,000 entries) |
+| `urls.json` | uuid → iNaturalist original URL (1,658 entries — the labeling set) |
 
 Images and label data are intentionally not tracked in git.
