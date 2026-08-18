@@ -11,6 +11,11 @@ Each answer appends one tab-separated line
 to the labels file and advances. Already-labeled images are skipped on
 restart, so the app can be stopped and resumed freely.
 
+Navigate back/forward with the arrow buttons (or arrow keys) to review and
+fix mistakes: answering again overwrites the previous label (the file stays
+append-only; the newest line per image wins). Labeled images are framed
+green (Yes), red (No), or gray (Uninformative).
+
 Usage:
     python3 label_app.py <image_folder> --labeler yourname \
         [--clusters 4 | --clusters cluster_4,cluster_6] \
@@ -47,8 +52,14 @@ PAGE = """<!doctype html>
   .img-box {{ flex: 1; display: flex; align-items: center; justify-content: center;
               overflow: hidden; width: 92vw; height: 70vh; }}
   img {{ max-width: 92vw; max-height: 70vh; border-radius: 6px;
-         transform-origin: 0 0; cursor: zoom-in; user-select: none; }}
+         transform-origin: 0 0; cursor: zoom-in; user-select: none;
+         border: 5px solid {border_color}; box-sizing: border-box; }}
   .zoom-hint {{ font-size: 12px; color: #888; margin-top: 4px; }}
+  .nav {{ display: flex; gap: 12px; align-items: center; margin-top: 8px; font-size: 15px; }}
+  .nav a {{ color: #ddd; background: #2a2a2a; text-decoration: none;
+            padding: 6px 14px; border-radius: 6px; }}
+  .nav .pos {{ color: #888; }}
+  .curlabel {{ font-weight: 600; }}
   .q {{ font-size: 20px; margin: 12px; }}
   .buttons {{ display: flex; gap: 14px; margin-bottom: 24px; }}
   button {{ font-size: 18px; padding: 12px 28px; border-radius: 8px; border: none; cursor: pointer; }}
@@ -62,9 +73,17 @@ PAGE = """<!doctype html>
 <div class="img-box"><img id="im" alt="specimen image" draggable="false"
   data-hi="{hi_url}" data-local="/img/{fname_url}"></div>
 <div class="zoom-hint">scroll to zoom &middot; drag to pan &middot; double-click or <kbd>0</kbd> to reset</div>
+<div class="nav">
+  <a id="prev" href="/?i={prev_i}">&larr; <kbd>&#8592;</kbd></a>
+  <span class="pos">{pos} / {total}</span>
+  <a id="next" href="/?i={next_i}">&rarr; <kbd>&#8594;</kbd></a>
+  <a href="/">&#9193; next unlabeled</a>
+  <span class="curlabel" style="color:{label_color}">{cur_label}</span>
+</div>
 <div class="q">Does this image contain leaf damages?</div>
 <form method="POST" action="/label" class="buttons">
   <input type="hidden" name="fname" value="{fname_attr}">
+  <input type="hidden" name="i" value="{i}">
   <button class="yes" name="label" value="Yes">Yes <kbd>y</kbd></button>
   <button class="no" name="label" value="No">No <kbd>n</kbd></button>
   <button class="uninf" name="label" value="Uninformative">Uninformative <kbd>u</kbd></button>
@@ -72,6 +91,8 @@ PAGE = """<!doctype html>
 <script>
 document.addEventListener('keydown', e => {{
   if (e.key === '0') {{ reset(); return; }}
+  if (e.key === 'ArrowLeft') {{ document.getElementById('prev').click(); return; }}
+  if (e.key === 'ArrowRight') {{ document.getElementById('next').click(); return; }}
   const map = {{y: 'Yes', n: 'No', u: 'Uninformative'}};
   const v = map[e.key.toLowerCase()];
   if (!v) return;
@@ -156,7 +177,8 @@ DONE_PAGE = """<!doctype html>
 <body style="font-family:system-ui;background:#111;color:#eee;display:flex;
              align-items:center;justify-content:center;height:100vh">
 <div style="text-align:center"><h1>All done &#127881;</h1><p>{n} images labeled.<br>
-Labels file: <code>{labels}</code></p></div>
+Labels file: <code>{labels}</code></p>
+<p><a href="/?i=0" style="color:#7a7">review from the start &rarr;</a></p></div>
 """
 
 
@@ -199,17 +221,25 @@ class State:
             with open(urls_json) as fh:
                 self.urls = json.load(fh)
 
-        self.labeled = set()
+        # fname -> current label; file is append-only, newest line wins
+        self.labels = {}
         if os.path.exists(labels_path):
             with open(labels_path) as fh:
                 for line in fh:
                     if line.strip():
-                        self.labeled.add(line.split("\t")[0])
+                        parts = line.rstrip("\n").split("\t")
+                        if len(parts) >= 2:
+                            self.labels[parts[0]] = parts[1]
 
-    def next_unlabeled(self):
-        for f in self.files:
-            if f not in self.labeled:
-                return f
+    def done_count(self):
+        return sum(1 for f in self.files if f in self.labels)
+
+    def next_unlabeled_index(self, after=-1):
+        """First unlabeled index > after, else first unlabeled anywhere, else None."""
+        n = len(self.files)
+        for i in list(range(after + 1, n)) + list(range(0, after + 1)):
+            if self.files[i] not in self.labels:
+                return i
         return None
 
     def record(self, fname, label):
@@ -219,7 +249,7 @@ class State:
         with open(self.labels_path, "a") as fh:
             fh.write(f"{fname}\t{label}\t{self.labeler}\t{ts}\n")
             fh.flush()
-        self.labeled.add(fname)
+        self.labels[fname] = label
 
 
 STATE = None
@@ -238,22 +268,40 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self):
-        path = urllib.parse.unquote(self.path)
-        if path == "/" or path.startswith("/?"):
-            fname = STATE.next_unlabeled()
-            if fname is None:
-                self._html(DONE_PAGE.format(n=len(STATE.labeled & STATE.file_set),
-                                            labels=html.escape(STATE.labels_path)))
-                return
+        parsed = urllib.parse.urlparse(self.path)
+        path = urllib.parse.unquote(parsed.path)
+        if path == "/":
+            qs = urllib.parse.parse_qs(parsed.query)
+            n = len(STATE.files)
+            if "i" in qs:
+                try:
+                    i = max(0, min(n - 1, int(qs["i"][0])))
+                except ValueError:
+                    i = 0
+            else:
+                i = STATE.next_unlabeled_index()
+                if i is None:
+                    self._html(DONE_PAGE.format(n=STATE.done_count(),
+                                                labels=html.escape(STATE.labels_path)))
+                    return
+            fname = STATE.files[i]
             uuid = os.path.splitext(os.path.basename(fname))[0]
+            cur = STATE.labels.get(fname)
+            colors = {"Yes": "#2e7d32", "No": "#c62828", "Uninformative": "#9e9e9e"}
+            done = STATE.done_count()
             self._html(PAGE.format(
                 labeler=html.escape(STATE.labeler),
-                progress=len(STATE.labeled & STATE.file_set),
-                remaining=len(STATE.files) - len(STATE.labeled & STATE.file_set),
+                progress=done,
+                remaining=n - done,
                 fname=html.escape(fname),
                 fname_url=urllib.parse.quote(fname),
                 fname_attr=html.escape(fname, quote=True),
                 hi_url=html.escape(STATE.urls.get(uuid, ""), quote=True),
+                i=i, pos=i + 1, total=n,
+                prev_i=max(0, i - 1), next_i=min(n - 1, i + 1),
+                border_color=colors.get(cur, "transparent"),
+                label_color=colors.get(cur, "#888"),
+                cur_label=html.escape(cur) if cur else "unlabeled",
             ))
         elif path.startswith("/img/"):
             rel = path[len("/img/"):]
@@ -289,8 +337,13 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             self._html("unknown file", 400)
             return
+        try:
+            i = int(form.get("i", ["-1"])[0])
+        except ValueError:
+            i = -1
+        nxt = STATE.next_unlabeled_index(after=i)
         self.send_response(303)
-        self.send_header("Location", "/")
+        self.send_header("Location", "/" if nxt is None else f"/?i={nxt}")
         self.end_headers()
 
 
@@ -317,12 +370,12 @@ def main():
     STATE = State(args.folder, labels, args.labeler, urls, args.manifest, clusters)
     print(f"{len(STATE.files)} images assigned in {STATE.folder}")
     per_cluster = collections.Counter(f.split(os.sep)[0] for f in STATE.files)
-    done_per = collections.Counter(f.split(os.sep)[0] for f in STATE.labeled & STATE.file_set)
+    done_per = collections.Counter(f.split(os.sep)[0] for f in STATE.files if f in STATE.labels)
     for c in sorted(per_cluster, key=lambda x: (len(x), x)):
         print(f"  {c}: {done_per[c]}/{per_cluster[c]} labeled")
     if STATE.urls:
         print(f"{len(STATE.urls)} high-res URLs loaded")
-    print(f"{len(STATE.labeled & STATE.file_set)} already labeled; labels append to {labels}")
+    print(f"{STATE.done_count()} already labeled; labels append to {labels}")
     print(f"serving on http://{args.host}:{args.port}")
     ThreadingHTTPServer((args.host, args.port), Handler).serve_forever()
 
