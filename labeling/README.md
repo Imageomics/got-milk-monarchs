@@ -1,20 +1,22 @@
 # Leaf-Damage Label Interface
 
 Label milkweed (*Asclepias syriaca*) iNaturalist images as **Yes / No /
-Uninformative** for leaf damage. One image at a time, in your browser.
+Uninformative** for leaf damage (sepcifically, from Monarch caterpillar bites). One image at a time, in your browser.
 
 ## What you need
 
 - Python 3.9+ (standard library only — nothing to install)
 - This folder: `label_app.py`, `urls.json`, `filelist.txt`, and (if assigned)
   your `manifest_<you>.txt`
-- Optional: the shared `images/` folder (`cluster_*/uuid.png`) — only needed
-  for offline work; otherwise images stream from iNaturalist
+- Optional: the shared `images/` folder (`cluster_*/uuid.png`)
+  - Only needed for offline work; otherwise images stream from iNaturalist
 
 ## Start
 
 All commands run from this `labeling/` folder. Easiest — **web-only mode**,
-no images to download (needs internet):
+no images to download (needs internet).
+
+Example commands to label cluster 4 (more clusters can be added through listing, e.g., `--clusters 4,5`):
 
 ```bash
 cd labeling
@@ -52,6 +54,7 @@ finish one — progress is never lost.
 - The header badge shows whether you see the iNat original (high-res,
   3 attempts) or the local 720px fallback; in web-only mode a failed fetch
   says so instead
+- Header badge also notes how many images have been labeled and how many are left (uniformative images don't count toward the total labeled)
 
 ## Output
 
