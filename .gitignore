@@ -219,3 +219,13 @@ __marimo__/
 
 # Mac System
 .DS_Store
+
+images/
+*.png
+*.webp
+*.jpg
+*.jpeg
+labels_*.tsv
+merged_labels.tsv
+manifest_*.txt
+assignments.json
