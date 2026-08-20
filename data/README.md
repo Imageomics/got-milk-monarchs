@@ -39,7 +39,6 @@ classifiers; 710 rows (426 No / 284 Yes), Uninformative removed.
 | `url` | iNaturalist original photo |
 | `emb` | 768-d float16 BioCLIP 2 embedding |
 | `n_annotators` | number of labelers |
-| `unanimous` | all labelers agreed |
 | `plant_part` | "has flowers" (KMeans clusters 5/7/8) or "leaf only" |
 
 ## Full Image Table
