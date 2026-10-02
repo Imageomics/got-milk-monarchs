@@ -36,7 +36,7 @@ classifiers; 710 rows (426 No / 284 Yes), Uninformative removed.
 |---|---|
 | `uuid` | image id |
 | `label` | Yes / No (newest per labeler, majority across labelers) |
-| `url` | iNaturalist original photo |
+| `url` | iNaturalist original-photo URL; images are not redistributed here, download from this URL |
 | `emb` | 768-d float16 BioCLIP 2 embedding |
 | `n_annotators` | number of labelers |
 | `plant_part` | "has flowers" (KMeans clusters 5/7/8) or "leaf only" |
@@ -53,7 +53,7 @@ Occurrence and damage fields are populated only for the 47,005
 |---|---|
 | `uuid` | image id |
 | `gbifID` | GBIF occurrence id (one per observation; joins multi-photo records) |
-| `url` | iNaturalist original photo |
+| `url` | iNaturalist original-photo URL; images are not redistributed here, download from this URL |
 | `pred_type` | leaf / flower / exclude (predicted) |
 | `p_exclude`, `p_flower`, `p_leaf` | image-type probabilities |
 | `in_2k_sample` | in the 2k KMeans/labeling sample |
@@ -81,36 +81,74 @@ image is predicted damaged.
 | `damage_rate_img` | image-level damage rate |
 | `population_ha` | hectares occupied at overwintering sites |
 
-## Milkweed Image Data: Provenance, Filters, and Citation
+## Image Source, Filters, and Citation
 
-All *Asclepias syriaca* images and their occurrence metadata come from a single fixed GBIF snapshot, not from a live GBIF or iNaturalist query. The snapshot is the one used to build [TreeOfLife-200M](https://huggingface.co/datasets/imageomics/TreeOfLife-200M):
+**No images are redistributed in this repository.** The tables above keep
+only identifiers: `uuid` (TreeOfLife-200M image id), `gbifID` (GBIF
+occurrence id), and `url` (iNaturalist original-photo URL). Images can be
+re-downloaded from `url`, and the observation page is
+`https://www.gbif.org/occurrence/<gbifID>`.
 
-> GBIF occurrence download of 2024-05-01, filter `occurrenceStatus = PRESENT`, DOI [10.15468/dl.bfv433](https://doi.org/10.15468/dl.bfv433) (download key `0009558-240425142415019`, 2,932,007,107 records from 73,180 datasets, licensed CC BY-NC 4.0).
+All image records and occurrence fields come from one fixed GBIF snapshot,
+not from a live GBIF or iNaturalist query. It is the snapshot used to build
+[TreeOfLife-200M](https://huggingface.co/datasets/imageomics/TreeOfLife-200M):
 
-Every record we use was published to GBIF by iNaturalist through the **iNaturalist Research-grade Observations** dataset (GBIF dataset key `50c9509d-22c7-4a22-a47d-8c48425ef4a7`, DOI [10.15468/ab3s5x](https://doi.org/10.15468/ab3s5x)). That dataset is versioned continuously and its listed alternative identifiers do not reach back to May 2024, so the snapshot DOI above is the citable, fixed reference; the iNaturalist dataset is cited as the originating publisher.
+> GBIF occurrence download of 2024-05-01, filter `occurrenceStatus = PRESENT`,
+> DOI [10.15468/dl.bfv433](https://doi.org/10.15468/dl.bfv433)
+> (download key `0009558-240425142415019`; 2,932,007,107 records from
+> 73,180 datasets; CC BY-NC 4.0).
 
-### Filtering chain
+Every record was published to GBIF by iNaturalist through the
+**iNaturalist Research-grade Observations** dataset (GBIF dataset key
+`50c9509d-22c7-4a22-a47d-8c48425ef4a7`, DOI
+[10.15468/ab3s5x](https://doi.org/10.15468/ab3s5x)). That dataset is
+versioned continuously and its listed alternative identifiers do not reach
+back to May 2024, so the snapshot DOI is the fixed, citable reference and
+the iNaturalist dataset is cited as the originating publisher.
 
-Counts are images (one GBIF occurrence can carry several photos; `source_id` / `gbifID` identifies the observation).
+### Record Selection
 
-| Step | Filter | Images | Observations |
+How the 89,560 rows of `full_image_table.parquet` and the 45,028-record
+analysis subset behind `damage_rate_vs_population.csv` were selected.
+"Image records" are rows (one per photo); "observations" are distinct
+`gbifID` values (one observation can carry several photos).
+
+| step | selection | image records | observations |
 |---|---|---|---|
-| 1 | TreeOfLife-200M records with `scientific_name = "Asclepias syriaca"`, `data_source = gbif`, `publisher = "iNaturalist.org"`, `basis_of_record = HUMAN_OBSERVATION`, `img_type = "Citizen Science"` | 89,560 | 64,790 |
-| 2 | Image-type router keeps `leaf` (drops `flower` and `exclude`, e.g. pods, seed fluff, senescent plants). Router is a probe on BioCLIP 2 embeddings trained from k-means cluster labels on a 2,000-image sample. | 47,005 | 36,863 |
-| 3 | Join occurrence fields by `gbifID` from the same snapshot: `eventDate`, `year`, `month`, `day`, `startDayOfYear`, `decimalLatitude`, `decimalLongitude`, `coordinateUncertaintyInMeters`, `countryCode`, `stateProvince`, `recordedBy` | 47,005 | 36,863 |
-| 4 | Analysis set: `countryCode ∈ {US, CA}` and `2012 ≤ year ≤ 2023` (matches the population series below; all retained records have coordinates) | 45,028 | 35,456 |
+| 1 | TreeOfLife-200M metadata: `scientific_name = "Asclepias syriaca"`, `data_source = gbif`, `publisher = "iNaturalist.org"`, `basis_of_record = HUMAN_OBSERVATION`, `img_type = "Citizen Science"` | 89,560 | 64,790 |
+| 2 | `pred_type = leaf` from the image-type router (drops `flower` and `exclude`: pods, seed fluff, senescent plants). Router is a probe on BioCLIP 2 embeddings trained from KMeans cluster labels on the 2k sample. | 47,005 | 36,863 |
+| 3 | Occurrence fields joined on `gbifID` from the same snapshot (`eventDate`, `year`, `month`, `day`, `decimalLatitude`, `decimalLongitude`, `coordinateUncertaintyInMeters`, `countryCode`, `stateProvince`, `elevation`, `recordedBy`) | 47,005 | 36,863 |
+| 4 | Analysis subset: `countryCode` in {US, CA} and `year` in 2012 to 2023 (matches the population series; all retained records have coordinates) | 45,028 | 35,456 |
 
-Leaf-damage labels (`labeling/`) were collected on the 2,000-image sample from step 1, clustered into 12 k-means clusters on BioCLIP 2 embeddings; clusters of pods, seed fluff, and senescent plants were excluded and the remaining 8 clusters were labeled Yes / No / Uninformative.
+The labels in `combined_labels_raw.tsv` and `training_dataset.parquet`
+were collected on a random 2,000-record sample from step 1
+(`in_2k_sample = true`), clustered into 12 KMeans clusters on BioCLIP 2
+embeddings. Clusters of pods, seed fluff, and senescent plants were
+excluded and the remaining 8 clusters were labeled Yes / No / Uninformative.
 
-### License note
+### License
 
-The TreeOfLife-200M compilation is CC0, but individual iNaturalist photos carry their own licenses (CC0, CC BY, or CC BY-NC), and the GBIF download as a whole is CC BY-NC 4.0. Per-image license and photographer attribution are available through each record's `source_url` / iNaturalist observation page.
+The TreeOfLife-200M compilation is CC0, but each iNaturalist photo carries
+its own license (CC0, CC BY, or CC BY-NC) and the GBIF download as a whole
+is CC BY-NC 4.0. Because images are not redistributed here, the per-photo
+license and photographer attribution apply at download time; both are
+shown on the observation page linked from `gbifID`, and `recordedBy` gives
+the observer name.
 
-### How to cite
+### Citation
 
-Suggested text for a data-availability statement:
+Suggested data-availability text:
 
-> Milkweed (*Asclepias syriaca*) images and occurrence metadata were taken from the TreeOfLife-200M dataset (Gu et al., 2025, 2026), which was built from the GBIF occurrence snapshot of 1 May 2024 (GBIF.org, 2024; https://doi.org/10.15468/dl.bfv433). We retained only iNaturalist Research-grade human observations (iNaturalist contributors, 2024; https://doi.org/10.15468/ab3s5x) with `img_type = Citizen Science`, classified as leaf images, located in the United States or Canada, and observed between 2012 and 2023 (45,028 images from 35,456 observations).
+> Milkweed (*Asclepias syriaca*) image records and occurrence metadata were
+> taken from the TreeOfLife-200M dataset (Gu et al., 2025, 2026), built from
+> the GBIF occurrence snapshot of 1 May 2024 (GBIF.org, 2024;
+> https://doi.org/10.15468/dl.bfv433). We retained iNaturalist
+> Research-grade human observations (iNaturalist contributors, 2024;
+> https://doi.org/10.15468/ab3s5x) with `img_type = Citizen Science`,
+> classified as leaf images, located in the United States or Canada, and
+> observed between 2012 and 2023 (45,028 image records from 35,456
+> observations). Images are not redistributed; each record retains its
+> iNaturalist photo URL and GBIF occurrence identifier.
 
 ```bibtex
 @misc{gbif_download_bfv433,
@@ -155,4 +193,6 @@ Suggested text for a data-availability statement:
 }
 ```
 
-The monarch population series above should be cited separately to Monarch Joint Venture (https://monarchjointventure.org/monarch-biology/population-trends).
+The monarch population series (`monarch_popn_counts.csv`) is cited
+separately to Monarch Joint Venture
+(https://monarchjointventure.org/monarch-biology/population-trends).
