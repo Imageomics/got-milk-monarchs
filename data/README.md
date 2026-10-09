@@ -183,7 +183,7 @@ What you get next to the CSV:
 | `milkweed_images_log.jsonl` | one record per successful request |
 | `milkweed_images_error_log.jsonl` | failed or skipped URLs, written only if any occur |
 | `milkweed_images_checksums.csv` | `filepath, filename, md5` of every file on disk |
-| `milkweed_images_missing.csv` | rows whose filename or MD5 did not match, written only if the check fails |
+| `milkweed_images_missing.csv` | rows whose filename or MD5 did not match, written only if expected images don't download correctly |
 
 The run ends with a "buddy check" that inner-joins the input CSV with the
 checksum CSV on filename and MD5 and reports whether all expected images are
