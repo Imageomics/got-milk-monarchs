@@ -38,8 +38,8 @@
     }
   ],
   "references": [
-    "Gu, J., Stevens, S., Campolongo, E. G., Thompson, M. J., Zhang, N., Wu, J., Kopanev, A., Mai, Z., White, A. E., Balhoff, J., Dahdul, W. M., Rubenstein, D., Lapp, H., Berger-Wolf, T., Chao, W., & Su, Y. (2026). TreeOfLife-200M (Revision 94bbc0b) [Data set]. Hugging Face. https://doi.org/10.57967/hf/8980",
-    "Gu, J., Stevens, S., Campolongo, E. G., Thompson, M. J., Zhang, N., Wu, J., Kopanev, A., Mai, Z., White, A. E., Balhoff, J., Dahdul, W. M., Rubenstein, D., Lapp, H., Berger-Wolf, T., Chao, W., & Su, Y. (2025). BioCLIP 2: Emergent Properties from Scaling Hierarchical Contrastive Learning [Conference paper]. Advances in Neural Information Processing Systems, 38, 102778-102811. Curran Associates, Inc. https://proceedings.neurips.cc/paper_files/paper/2025/file/94da80cbfe870c1db958c88a8a27018c-Paper-Conference.pdf",
+    "Gu, J., Stevens, S., Campolongo, E. G., Thompson, M. J., Zhang, N., Wu, J., Kopanev, A., Mai, Z., White, A. E., Balhoff, J., Dahdul, W. M., Rubenstein, D., Lapp, H., Berger-Wolf, T., Chao, W., & Su, Y. (2026). TreeOfLife-200M (Revision 94bbc0b) [Dataset]. Hugging Face. https://doi.org/10.57967/hf/8980",
+    "Gu, J., Stevens, S., Campolongo, E. G., Thompson, M. J., Zhang, N., Wu, J., Kopanev, A., Mai, Z., White, A. E., Balhoff, J., Dahdul, W. M., Rubenstein, D., Lapp, H., Berger-Wolf, T., Chao, W., & Su, Y. (2025). BioCLIP 2: Emergent Properties from Scaling Hierarchical Contrastive Learning [Conference paper]. Advances in Neural Information Processing Systems, 38, 102778-102811. Curran Associates, Inc. https://doi.org/10.52202/085713-3436",
     "GBIF.org (2024). GBIF Occurrence Download [Data set]. The Global Biodiversity Information Facility. https://doi.org/10.15468/dl.bfv433",
     "Gu, J., Stevens, S., Campolongo, E. G., Thompson, M. J., Zhang, N., Wu, J., Kopanev, A., Mai, Z., White, A. E., Balhoff, J., Dahdul, W. M., Rubenstein, D., Lapp, H., Berger-Wolf, T., Chao, W., & Su, Y. (2025). BioCLIP 2 (Version 1.0.0) [Computer software]. Hugging Face. https://doi.org/10.57967/hf/5765"
   ]
