@@ -1,0 +1,47 @@
+{
+  "creators": [
+    {
+      "name": "Campolongo, Elizabeth G",
+      "orcid": "0000-0003-0846-2413",
+      "affiliation": "The Ohio State University"
+    },
+    {
+      "name": "MacArthur-Waltz, Dylan J",
+      "orcid": "0000-0001-7704-2856",
+      "affiliation": "University of Maine"
+    },
+    {
+      "name": "Zhang, Net",
+      "orcid": "0000-0003-2664-451X",
+      "affiliation": "The Ohio State University"
+    }
+  ],
+  "upload_type": "software",
+  "description": "FloraPalooza project for detecting Monarch caterpillar chewing damage on Milkweed plants.",
+  "keywords": [
+    "imageomics",
+    "caterpillar",
+    "leaf-damage",
+    "leaves",
+    "logistic-regression",
+    "milkweed",
+    "monarch",
+    "palooza"
+  ],
+  "title": "got-milk-monarchs",
+  "version": "1.0.0",
+  "license": "MIT",
+  "publication_date": "2026-10-09",
+  "grants": [
+    {
+      "id": "021nxhr62::2118240"
+    }
+  ],
+  "references": [
+    "Gu, J., Stevens, S., Campolongo, E. G., Thompson, M. J., Zhang, N., Wu, J., Kopanev, A., Mai, Z., White, A. E., Balhoff, J., Dahdul, W. M., Rubenstein, D., Lapp, H., Berger-Wolf, T., Chao, W., & Su, Y. (2026). TreeOfLife-200M (Revision 94bbc0b) [Dataset]. Hugging Face. https://doi.org/10.57967/hf/8980",
+    "Gu, J., Stevens, S., Campolongo, E. G., Thompson, M. J., Zhang, N., Wu, J., Kopanev, A., Mai, Z., White, A. E., Balhoff, J., Dahdul, W. M., Rubenstein, D., Lapp, H., Berger-Wolf, T., Chao, W., & Su, Y. (2025). BioCLIP 2: Emergent Properties from Scaling Hierarchical Contrastive Learning [Conference paper]. Advances in Neural Information Processing Systems, 38, 102778-102811. Curran Associates, Inc. https://doi.org/10.52202/085713-3436",
+    "GBIF.org (2024). GBIF Occurrence Download [Dataset]. The Global Biodiversity Information Facility. https://doi.org/10.15468/dl.bfv433",
+    "iNaturalist contributors (2024). iNaturalist Research-grade Observations [Dataset]. iNaturalist.org. https://doi.org/10.15468/ab3s5x",
+    "Gu, J., Stevens, S., Campolongo, E. G., Thompson, M. J., Zhang, N., Wu, J., Kopanev, A., Mai, Z., White, A. E., Balhoff, J., Dahdul, W. M., Rubenstein, D., Lapp, H., Berger-Wolf, T., Chao, W., & Su, Y. (2025). BioCLIP 2 (Version 1.0.0) [Computer software]. Hugging Face. https://doi.org/10.57967/hf/5765"
+  ]
+}
