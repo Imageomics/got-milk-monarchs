@@ -1,4 +1,4 @@
-# got-milk-monarchs
+# got-milk-monarchs [![DOI](https://zenodo.org/badge/1338474631.svg)](https://doi.org/10.5281/zenodo.23895560)
 
 [FloraPalooza](https://github.com/Imageomics/FloraPalooza-2026) project for detecting Monarch butterfly chewing damage on Milkweed leaves. More information and the conclusions from our project are viewable in [our project presentation](https://docs.google.com/presentation/d/1baP8iX4cfTwQOn99cfgYlntlKyjzO_aR5Sy6F0k9z_Q/edit?usp=sharing).
 
