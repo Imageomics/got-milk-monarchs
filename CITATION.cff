@@ -18,7 +18,7 @@ identifiers:
     value: "https://github.com/imageomics/got-milk-monarchs/releases/tag/1.0.0"
   - description: "The GitHub source tree URL aligned to release tag 1.0.0."
     type: url
-    value: "https://github.com/imageomics/got-milk-monarchs/tree/1.0.0"
+    value: "https://github.com/imageomics/got-milk-monarchs/commit/4d18ef45cfd99fcf33b8ff227786d5b3042b19c9"
 keywords:
   - "imageomics"
   - "caterpillar"
@@ -34,3 +34,4 @@ repository-code: "https://github.com/imageomics/got-milk-monarchs"
 title: "got-milk-monarchs"
 version: "1.0.0"
 type: software
+doi: 10.5281/zenodo.23895560
