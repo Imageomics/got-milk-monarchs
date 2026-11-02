@@ -11,7 +11,7 @@ authors:
   given-names: "Net"
   orcid: "https://orcid.org/0000-0003-2664-451X"
 cff-version: 1.2.0
-date-released: "2026-10-09"
+date-released: "2026-11-02"
 identifiers:
   - description: "The GitHub release URL of tag 1.0.0."
     type: url
